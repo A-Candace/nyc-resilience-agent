@@ -1,4 +1,4 @@
-arcgis>=2.2,<2.5
+arcgis==2.3.0
 shapely>=2.0
 pyshp>=2.3
 pyproj>=3.6
