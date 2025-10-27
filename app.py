@@ -1,9 +1,8 @@
-# app.py
 from io import BytesIO
 import os
 import math
 import json
-from datetime import datetime, timedelta, timezone, date, time
+from datetime import datetime, timedelta, timezone, date
 
 import numpy as np
 import pandas as pd
@@ -11,17 +10,18 @@ import streamlit as st
 import pydeck as pdk
 from dotenv import load_dotenv
 
-# NEW: scraping deps
-import requests
-from bs4 import BeautifulSoup
-
 # System helpers
 import tempfile
 from zipfile import ZipFile
 
 # === Forecasting Agent imports ===
 from forecasting.feature_weights import WEIGHT_SETS, ATTR_MAP
-from forecasting.static_modifiers import compute_static_matrix, robust_scale, static_risk_weight_per_board, to_multiplier
+from forecasting.static_modifiers import (
+    compute_static_matrix,
+    robust_scale,
+    static_risk_weight_per_board,
+    to_multiplier
+)
 from forecasting.models.rule_based import forecast_rule_based
 from forecasting.models.linear_residual import forecast_linear_residual
 from forecasting.models.graph_diffusion import forecast_graph_diffusion
@@ -35,17 +35,18 @@ except Exception:
 
 
 # =========================
+# Feature flags
+# =========================
+# Deactivate the sidebar "Community Board Agent (beta)" without deleting code:
+ENABLE_CB_AGENT_SIDEBAR = False
+
+
+# =========================
 # Shared helpers for static multiplier
 # =========================
 def build_board_multiplier(boards, weight_set_key="Random Forest (Model 1)"):
-    """
-    NOTE: Per user request, we only use Model 1 static variables/weights.
-    Any external caller's weight_set_key is ignored in spirit; we default to RF Model 1.
-    """
-    # Force Model 1 if available
-    if "Random Forest (Model 1)" in WEIGHT_SETS:
-        weight_set_key = "Random Forest (Model 1)"
-    weights = WEIGHT_SETS[weight_set_key]  # dict of six normalized weights
+    # Restrict to Model 1 only
+    weights = WEIGHT_SETS[weight_set_key]
     static_df = compute_static_matrix(boards, ATTR_MAP)         # index=unit_id
     static_df_scaled = robust_scale(static_df)                  # ~[0,1]
     risk_score = static_risk_weight_per_board(static_df_scaled, weights, ATTR_MAP)  # [0,1]
@@ -92,7 +93,6 @@ LOCAL_CB_ZIP = os.getenv("LOCAL_CB_ZIP", "NYC Community Boards_20251006.zip")
 def normalize_cb_id(val):
     """
     Normalize community board id to a clean string of digits (e.g., '305'), never '305.0'.
-    Falls back gracefully if not numeric.
     """
     if val is None or (isinstance(val, float) and math.isnan(val)):
         return ""
@@ -128,7 +128,6 @@ def load_and_merge_board_data(boards: list, csv_path: str = "DataForBoxPlots.csv
     try:
         csv_df = pd.read_csv(csv_path)
 
-        # Columns to pull from CSV
         csv_cols = ['CB_id', 'Buildings', 'Elevation', 'Slope', 'Commuting',
                     'Imperv', 'Footprint', 'BLDperArea', 'FTPperArea']
 
@@ -148,7 +147,7 @@ def load_and_merge_board_data(boards: list, csv_path: str = "DataForBoxPlots.csv
             boro_cd = normalize_cb_id(boro_cd_raw)
 
             filtered_attrs = {
-                'boro_cd': boro_cd,  # cleaned
+                'boro_cd': boro_cd,  # normalized
                 'shape_area': board['attrs'].get('shape_area'),
                 'shape_leng': board['attrs'].get('shape_leng'),
                 'Area': board['attrs'].get('Area'),
@@ -158,7 +157,7 @@ def load_and_merge_board_data(boards: list, csv_path: str = "DataForBoxPlots.csv
                 csv_data = csv_lookup[boro_cd]
                 filtered_attrs.update(csv_data)
             else:
-                for col in csv_cols[1:]:  # Skip CB_id
+                for col in csv_cols[1:]:
                     filtered_attrs[col] = None
 
             board['attrs'] = filtered_attrs
@@ -397,33 +396,26 @@ def attribute_info(selected_attr_label: str) -> str:
             "paths, increasing runoff and localized ponding. In NYC analyses, building-related variables were among the "
             "strongest spatial predictors of reported street flooding. — *" + P1 + "*"
         )
-
     if selected_attr_label.startswith("Footprint per Area"):
         return (
             "**Why it matters.** Greater **built footprint per unit area** means more continuous impervious cover and "
             "fewer infiltration/retention opportunities, which elevates pluvial flood susceptibility and prolongs "
             "drainage times. Building footprint metrics performed strongly in explaining complaint variability. — *" + P1 + "*"
         )
-
     if selected_attr_label == "Percentage Impervious Cover":
         return (
             "**Why it matters.** Impervious surfaces (streets, sidewalks, roofs) limit infiltration, raising runoff "
-            "coefficients and peak discharges (e.g., in Rational/IDF-based design). Higher imperviousness generally "
-            "elevates pluvial flood risk. — *" + P2 + "*"
+            "coefficients and peak discharges. Higher imperviousness generally elevates pluvial flood risk. — *" + P2 + "*"
         )
-
     if selected_attr_label == "Slope":
         return (
-            "**Why it matters.** Slope governs velocity and storage: flatter areas retain water and show higher flood "
-            "susceptibility; steeper slopes reduce ponding depth and duration. — *" + P2 + "*"
+            "**Why it matters.** Flatter areas retain water and show higher flood susceptibility; steeper slopes reduce "
+            "ponding depth and duration. — *" + P2 + "*"
         )
-
     if selected_attr_label == "Elevation":
         return (
-            "**Why it matters.** Low-lying areas (including coastal low elevations) face elevated risk due to ponding "
-            "and interactions with surge/tide where relevant. — *" + P2 + "*"
+            "**Why it matters.** Low-lying areas face elevated risk due to ponding and potential surge/tide interactions. — *" + P2 + "*"
         )
-
     return "Context coming soon."
 
 
@@ -434,21 +426,18 @@ def precip_metric_info(metric_label: str) -> str:
     if metric_label.startswith("Average of daily Max"):
         return (
             "**Why it matters.** The day’s **maximum hourly intensity** proxies design-critical peaks used in drainage "
-            "methods (e.g., IDF/Rational). Intensification trends increase pluvial exceedance risk. — *" + P2 + "*"
+            "methods. Intensification trends increase pluvial exceedance risk. — *" + P2 + "*"
         )
-
     if metric_label.startswith("Average of daily Average"):
         return (
             "**Why it matters.** The day’s **mean rate** captures sustained loading on sewers—useful when longer, "
-            "moderate rain still overwhelms capacity. Complements intensity by reflecting duration. — *" + P2 + "*"
+            "moderate rain still overwhelms capacity. — *" + P2 + "*"
         )
-
     if metric_label.startswith("Average of daily Total"):
         return (
             "**Why it matters.** **Total daily accumulation** highlights prolonged events that drive basement seepage "
-            "and widespread ponding even without sharp peaks. (Your pipeline aggregates totals at the DIS level.) — *" + P3 + "*"
+            "and widespread ponding even without sharp peaks. — *" + P3 + "*"
         )
-
     return "Context coming soon."
 
 
@@ -603,8 +592,8 @@ def _load_boards_from_shapefile_zipfilelike(zip_filelike):
 
                 if not looks_like_lonlat(x0, y0):
                     transformer = Transformer.from_crs(
-                        CRS.from_epsg(2263),
-                        CRS.from_epsg(4326),
+                        2263,
+                        4326,
                         always_xy=True
                     )
             except Exception:
@@ -743,7 +732,7 @@ def aggregate_series_to_boards(series_by_cell: pd.Series, points_df: pd.DataFram
 
 
 # -----------------------------
-# Basemap + view helpers
+# Basemap + view helpers + labels
 # -----------------------------
 def esri_light_gray_basemap():
     return pdk.Layer(
@@ -783,6 +772,67 @@ def fc_center_and_zoom(fc):
     elif span > 1.0: zoom = 9.8
     elif span > 0.5: zoom = 10.2
     return lat, lon, zoom
+
+def cb_label_layer_from_boards(boards, text_size=12):
+    """
+    Returns a pydeck TextLayer placing the community board number ('cb') at each board's centroid.
+    """
+    sg, _, _, _ = try_import_shapely()
+    rows = []
+    for b in boards:
+        cb_num = get_board_display_id(b)
+        if not cb_num:
+            continue
+        p = b["geom"].representative_point() if sg else None
+        if p is None:
+            continue
+        rows.append({"lon": float(p.x), "lat": float(p.y), "cb": cb_num})
+    if not rows:
+        return None
+    return pdk.Layer(
+        "TextLayer",
+        data=rows,
+        get_position='[lon, lat]',
+        get_text='cb',
+        get_size=text_size,
+        get_angle=0,
+        get_color=[20, 20, 20],
+        get_alignment_baseline='"center"'
+    )
+
+
+# -----------------------------
+# NYC CB prefix rules & helpers
+# -----------------------------
+BORO_PREFIX = {
+    "1": "Manhattan",
+    "2": "Bronx",
+    "3": "Brooklyn",
+    "4": "Queens",
+    "5": "Staten Island",
+}
+
+def interpret_cb_code(code_str: str):
+    """
+    Interpret a 3-digit community board code like '308' -> ('Brooklyn', 8).
+    Returns (borough_name, board_number) or (None, None) if not parseable.
+    """
+    if not code_str:
+        return None, None
+    s = "".join([c for c in str(code_str) if c.isdigit()])
+    if len(s) < 3:
+        return None, None
+    prefix = s[0]
+    borough = BORO_PREFIX.get(prefix)
+    try:
+        num = int(s[1:3])
+    except Exception:
+        num = None
+    if borough and num and 1 <= num <= 18:
+        return borough, num
+    if borough and num:
+        return borough, num
+    return None, None
 
 
 # -----------------------------
@@ -833,11 +883,17 @@ def render_map_assistant(block_key: str, context: dict, default_hint: str, descr
                 "You are an assistant for a flood risk hackathon. Explain findings clearly for business users. "
                 "Be concise and point out hotspots, drivers, and practical green-infrastructure ideas."
             )
-            extra = "\n\nIMPORTANT: Refer to locations by their community board NUMBER only (e.g., 305), not by names."
+            numbering_rules = (
+                "\n\nNYC Community Board numbering:\n"
+                "- Prefix 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
+                "- A three-digit code XYZ means borough X and board YZ (e.g., 308 → Brooklyn CB 8, 402 → Queens CB 2)."
+            )
+            extra = "\n\nIMPORTANT: Refer to locations by their community board NUMBER only (e.g., 305)."
             prompt = (
                 "Use the following JSON context to describe the current map and give planning suggestions. "
                 "Focus on what stands out, why, and what to do next.\n\n"
                 + json.dumps(context, indent=2)
+                + numbering_rules
             )
             if describe_by_cb:
                 prompt += extra
@@ -866,9 +922,15 @@ def render_map_assistant(block_key: str, context: dict, default_hint: str, descr
                 transcript.append(f"{turn['role'].capitalize()}: {turn['text']}")
             transcript_text = "\n".join(transcript)
 
+            numbering_rules = (
+                "\n\nNYC Community Board numbering:\n"
+                "- Prefix 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
+                "- A three-digit code XYZ means borough X and board YZ."
+            )
             prompt = (
                 "Context JSON for the current map:\n"
                 + json.dumps(context, indent=2)
+                + numbering_rules
                 + "\n\nRecent exchange:\n"
                 + transcript_text
                 + "\n\nUser follow-up:\n"
@@ -897,75 +959,6 @@ def render_map_assistant(block_key: str, context: dict, default_hint: str, descr
 
 
 # -----------------------------
-# Community Board Agent (beta) - scraper
-# -----------------------------
-def fetch_cb_databook(cb_code: str) -> dict:
-    """
-    Fetch and parse https://databook.wegov.nyc/d/{cb_code}
-    Returns a dict with directory info + deep links if found.
-    Gracefully handles errors and layout changes.
-    """
-    url = f"https://databook.wegov.nyc/d/{cb_code}"
-    out = {"cb": cb_code, "url": url, "ok": False, "error": None, "directory": {}, "links": {}}
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code != 200:
-            out["error"] = f"HTTP {r.status_code}"
-            return out
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        # Try to find texty labels in a details card
-        # We’ll look for common labels and grab the next sibling text or link.
-        labels = [
-            "Chair", "District Manager", "Office Address", "Office Phone",
-            "Office Fax", "Office Email", "Board Meeting", "Cabinet Meeting",
-            "Website"
-        ]
-        for lbl in labels:
-            # find label element by text
-            el = soup.find(lambda tag: tag.name in ["div","span","p","td","th","li","strong","b"]
-                                     and tag.get_text(strip=True).lower().startswith(lbl.lower()))
-            if not el:
-                # try alternative: exact match in a table header cell
-                el = soup.find(lambda tag: tag.name in ["th","td","p","span","div"]
-                                         and tag.get_text(strip=True).lower() == lbl.lower())
-            if el:
-                # attempt to get the value nearby (same node, next sibling, or parent next)
-                val = None
-                # look right after colon
-                txt = el.get_text(" ", strip=True)
-                if ":" in txt and len(txt.split(":", 1)[1].strip()) > 0:
-                    val = txt.split(":", 1)[1].strip()
-                if not val:
-                    sib = el.find_next_sibling()
-                    if sib:
-                        val = sib.get_text(" ", strip=True)
-                if not val and el.parent:
-                    sib2 = el.parent.find_next_sibling()
-                    if sib2:
-                        val = sib2.get_text(" ", strip=True)
-                # If there's a link inside, capture href
-                if not val:
-                    a = el.find("a")
-                    if a and a.get("href"):
-                        val = a.get("href")
-                if val:
-                    out["directory"][lbl] = val
-
-        # Find "View District Census Data" link
-        census_link = soup.find("a", string=lambda s: s and "View District Census Data" in s)
-        if census_link and census_link.get("href"):
-            href = census_link.get("href")
-            out["links"]["census"] = href if href.startswith("http") else f"https://databook.wegov.nyc{href}"
-
-        out["ok"] = True
-        return out
-    except Exception as e:
-        out["error"] = str(e)
-        return out
-
-
-# -----------------------------
 # Sidebar + landing
 # -----------------------------
 def sidebar_agents():
@@ -973,49 +966,66 @@ def sidebar_agents():
         st.markdown("### NYC Resilience AI Agent")
         st.caption("Demo – Flooding & UHI")
         st.divider()
+        # Status checkboxes
         st.checkbox("Mapping Agent", value=True, disabled=True)
         st.checkbox("Forecasting Agent", value=True, disabled=True)
         st.checkbox("Optimization Agent", value=False, disabled=True)
         st.checkbox("Green Infrastructure Agent", value=False, disabled=True)
         st.divider()
-
         # Navigation buttons
         st.button("🏠 Home", use_container_width=True, on_click=lambda: st.session_state.update(page="landing"))
         st.button("🌊 Flooding", use_container_width=True, on_click=lambda: st.session_state.update(page="flooding"))
         st.button("📈 Forecasting", use_container_width=True, on_click=lambda: st.session_state.update(page="forecasting"))
-
         st.divider()
 
-        # NEW: Community Board Agent (beta)
-        with st.expander("🧭 Community Board Agent (beta)", expanded=False):
-            cb_in = st.text_input("Enter CB code (e.g., 308, 402):", value="")
-            if st.button("Fetch CB info"):
-                code = normalize_cb_id(cb_in)
-                if not code:
-                    st.warning("Please enter a valid CB code (digits only).")
-                else:
-                    info = fetch_cb_databook(code)
-                    if not info.get("ok"):
-                        st.error(f"Could not fetch Databook page for {code}. {info.get('error') or ''}")
-                    else:
-                        st.success(f"Databook summary for {code}")
-                        # Quick actions
-                        cols = st.columns(2)
-                        with cols[0]:
-                            st.link_button("Open full Databook page", info["url"], use_container_width=True)
-                        with cols[1]:
-                            if info["links"].get("census"):
-                                st.link_button("Open Census profile", info["links"]["census"], use_container_width=True)
-                            else:
-                                st.caption("Census link not found.")
+        # 🛑 Community Board Agent (beta) is deactivated by flag
+        if ENABLE_CB_AGENT_SIDEBAR:
+            with st.expander("🧭 Community Board Agent (beta)", expanded=False):
+                st.write("Browse official NYC Community Boards info:")
+                st.link_button(
+                    "Open NYC CAU Community Boards",
+                    "https://www.nyc.gov/site/cau/community-boards/community-boards.page",
+                    use_container_width=True
+                )
+                st.caption("Tip: find the borough & board you care about, then come back and ask questions here.")
 
-                        # Directory card
-                        if info["directory"]:
-                            st.markdown("**Directory**")
-                            for k, v in info["directory"].items():
-                                st.markdown(f"- **{k}:** {v}")
-                        else:
-                            st.caption("No directory details parsed (layout may have changed).")
+                code_in = st.text_input("Enter a 3-digit CB code (e.g., 308 → Brooklyn CB 8)", "")
+                if code_in.strip():
+                    boro, num = interpret_cb_code(code_in.strip())
+                    if boro and num:
+                        st.success(f"Interpreted: **{boro} Community Board {num}**")
+                    else:
+                        st.warning("Could not interpret that code. Expected a 3-digit like 308, 402, 115, etc.")
+
+                q = st.text_area("Ask about a Community Board (e.g., 'What do you know about CB 308?')", "")
+                if st.button("Ask Claude about a CB"):
+                    if not q.strip():
+                        st.warning("Please type a question first.")
+                    else:
+                        try:
+                            numbering_rules = (
+                                "When the user mentions a 3-digit code XYZ, interpret it as borough prefix X and board YZ.\n"
+                                "Prefixes: 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
+                                "Examples: 308 → Brooklyn CB 8; 402 → Queens CB 2; 115 → Manhattan CB 15."
+                            )
+                            base_prompt = (
+                                "You are helping with NYC Community Board context for planning. "
+                                "Answer briefly and clearly. If unsure, say so and suggest the official NYC CB page "
+                                "(https://www.nyc.gov/site/cau/community-boards/community-boards.page).\n\n"
+                                + numbering_rules
+                                + "\n\nUser question:\n"
+                                + q
+                            )
+                            if bedrock_enabled():
+                                answer = call_claude(base_prompt, system="NYC CB assistant", temperature=0.2)
+                            else:
+                                answer = (
+                                    "If Claude is connected, I’ll interpret codes like 308 as Brooklyn CB 8 and summarize what’s generally known. "
+                                    "For official details, use the NYC CB page linked above."
+                                )
+                            st.info(answer)
+                        except Exception as e:
+                            st.error(f"Claude/Bedrock error: {e}")
 
         if bedrock_enabled():
             st.success("Claude (Bedrock) connected.")
@@ -1040,10 +1050,10 @@ def landing_page():
         digraph G {
             rankdir=LR;
             node [shape=box, style=rounded];
+            User -> "Community Board Agent (beta)" [style=dashed];
             User -> "Flood Mapping Agent";
-            "Flood Mapping Agent" -> "Community Board Agent (beta)" [label="CB# lookup"];
             "Flood Mapping Agent" -> "Forecasting Agent" [label="precip forecast (shared)"];
-            "Community Board Agent (beta)" -> "Forecasting Agent" [style=dotted, label="context"];
+            "Community Board Agent (beta)" -> "Forecasting Agent" [style=dashed, label="context (CB directory/info)"];
             "Forecasting Agent" -> User [label="Explain + QA"];
             "Forecasting Agent" -> "Optimization Agent" [style=dashed, label="(soon)"];
             "Optimization Agent" -> "Green Infrastructure Agent" [style=dashed, label="(soon)"];
@@ -1056,7 +1066,7 @@ def landing_page():
 # -----------------------------
 def flooding_mapping_agent():
     st.title("🌊 Flooding → Mapping Agent (NYC)")
-    st.caption("Displays Community Board polygons, places one radar point per board, simulates precipitation, and colors the boards (graduated blues). Saves the forecast for downstream agents.")
+    st.caption("Displays Community Board polygons, places one radar point per board, simulates precipitation, and colors the boards. Saves the forecast for downstream agents.")
 
     # ---- Step 1: Load Community Boards automatically from local ZIP ----
     boards = load_boards_from_shapefile_path(LOCAL_CB_ZIP)
@@ -1113,45 +1123,54 @@ def flooding_mapping_agent():
         line_width_min_pixels=3,
         line_width_max_pixels=10,
     )
+    label_layer = cb_label_layer_from_boards(boards, text_size=12)
     deck0 = pdk.Deck(
-        layers=[esri_light_gray_basemap(), outline],
+        layers=[esri_light_gray_basemap(), outline] + ([label_layer] if label_layer else []),
         initial_view_state=pdk.ViewState(latitude=lat_c, longitude=lon_c, zoom=zoom_c),
         tooltip={"html": "<b>Board #:</b> {name}", "style": {"backgroundColor": "white", "color": "black"}}
     )
     st.pydeck_chart(deck0, use_container_width=True)
     st.caption("Community Boards/Districts (outline).")
 
-    # Prepare attributes table (CLEANED per rules) + download
+    # Prepare attributes table for download only (not displayed)
     try:
-        attr_cols = ["Buildings", "Elevation", "Slope", "Commuting", "Imperv", "Footprint", "BLDperArea", "FTPperArea"]
-        rows = []
+        attrs_list = []
         for b in boards:
-            attrs = b.get("attrs", {}) or {}
-            rows.append({
+            row = {
                 "unit_id": b["unit_id"],
                 "cb_number": get_board_display_id(b),
-                **{k: attrs.get(k) for k in attr_cols},
-                "shape_area": attrs.get("shape_area"),
-                "shape_leng": attrs.get("shape_leng"),
-                "Area": attrs.get("Area"),
-            })
-        attrs_df = pd.DataFrame(rows)
+                **b.get("attrs", {})
+            }
+            attrs_list.append(row)
 
-        # Drop boards where ALL selected static attrs are None/NaN
-        all_none_mask = attrs_df[attr_cols].isna().all(axis=1)
-        cleaned_df = attrs_df[~all_none_mask].copy()
+        attrs_df = pd.DataFrame(attrs_list)
 
-        # Sort so partial-missing rows go to bottom (by count of NaNs)
-        cleaned_df["missing_count"] = cleaned_df[attr_cols].isna().sum(axis=1)
-        cleaned_df = cleaned_df.sort_values(["missing_count", "cb_number"], ascending=[True, True]).drop(columns=["missing_count"])
+        # Reorder columns to show key attributes first
+        priority_cols = ["unit_id", "cb_number", "boro_cd", "Buildings", "Elevation",
+                         "Slope", "Commuting", "Imperv", "Footprint",
+                         "BLDperArea", "FTPperArea", "shape_area", "shape_leng", "Area"]
 
-        st.markdown("**Community Board static-attributes table (cleaned):**")
-        st.dataframe(cleaned_df, use_container_width=True, hide_index=True)
+        display_cols = [col for col in priority_cols if col in attrs_df.columns]
+        other_cols = [col for col in attrs_df.columns if col not in display_cols]
+        final_cols = display_cols + other_cols
+        attrs_df = attrs_df[final_cols]
+
+        # Drop rows where ALL tracked static attributes are None/NaN
+        tracked = ["Buildings","Elevation","Slope","Commuting","Imperv","Footprint","BLDperArea","FTPperArea"]
+        if any(col in attrs_df.columns for col in tracked):
+            sub = [c for c in tracked if c in attrs_df.columns]
+            all_missing_mask = attrs_df[sub].isna().all(axis=1)
+            attrs_df = attrs_df.loc[~all_missing_mask].copy()
+
+            # Push partial-missing rows to bottom
+            some_missing_mask = attrs_df[sub].isna().any(axis=1)
+            attrs_df["__missing_rank__"] = np.where(some_missing_mask, 1, 0)
+            attrs_df = attrs_df.sort_values(["__missing_rank__", "cb_number"]).drop(columns="__missing_rank__")
 
         st.download_button(
-            "Download Cleaned Attributes Table (CSV)",
-            data=cleaned_df.to_csv(index=False).encode("utf-8"),
-            file_name="nyc_boards_static_attributes_cleaned.csv",
+            "Download Full Attributes Table (CSV)",
+            data=attrs_df.to_csv(index=False).encode("utf-8"),
+            file_name="nyc_boards_full_attributes.csv",
             mime="text/csv",
             use_container_width=True,
         )
@@ -1168,7 +1187,7 @@ def flooding_mapping_agent():
         end = now + timedelta(days=365 * 10)
         date_sel = st.date_input("Forecast date", value=now.date(), min_value=now.date(), max_value=end.date(), key="single_date")
         hour = st.slider("Hour (local)", 0, 23, value=15, key="single_hour")
-        dt_selected = datetime.combine(date_sel, time.min) + timedelta(hours=hour)
+        dt_selected = datetime.combine(date_sel, datetime.min.time()) + timedelta(hours=hour)
     opacity = st.slider("Polygon fill opacity", 0.2, 1.0, 0.8)
     show_points = st.checkbox("Show radar points", value=True)
 
@@ -1189,6 +1208,9 @@ def flooding_mapping_agent():
         layers1.append(
             pdk.Layer("ScatterplotLayer", data=RADAR_DF, get_position='[lon, lat]', get_radius=100, get_fill_color=[20,20,20])
         )
+    label_layer = cb_label_layer_from_boards(boards, text_size=12)
+    if label_layer:
+        layers1.append(label_layer)
     deck1 = pdk.Deck(
         layers=layers1,
         initial_view_state=pdk.ViewState(latitude=lat_c, longitude=lon_c, zoom=zoom_c),
@@ -1277,6 +1299,7 @@ def flooding_mapping_agent():
             st.warning(f"No valid data found for {selected_attr_label}.")
         else:
             breaks_attr = compute_breaks(attr_series, k=len(BLUES))
+
             feats_attr = []
             for b in boards:
                 v = float(attr_series.get(b["unit_id"], 0.0))
@@ -1306,8 +1329,11 @@ def flooding_mapping_agent():
                 opacity=opacity_attr
             )
 
+            label_layer = cb_label_layer_from_boards(boards, text_size=12)
+            layers_attr = [esri_light_gray_basemap(), cb_attr_layer] + ([label_layer] if label_layer else [])
+
             deck_attr = pdk.Deck(
-                layers=[esri_light_gray_basemap(), cb_attr_layer],
+                layers=layers_attr,
                 initial_view_state=pdk.ViewState(latitude=lat_c, longitude=lon_c, zoom=zoom_c),
                 tooltip={
                     "html": "<b>Board #:</b> {cb}<br/><b>{attribute}:</b> {value}",
@@ -1317,7 +1343,6 @@ def flooding_mapping_agent():
 
             st.pydeck_chart(deck_attr, use_container_width=True)
 
-            # --- Per-map assistant: Attribute choropleth ---
             attr_top = pd.DataFrame({
                 "cb": [get_board_display_id(b) for b in boards],
                 "unit_id": [b["unit_id"] for b in boards],
@@ -1342,7 +1367,7 @@ def flooding_mapping_agent():
                 describe_by_cb=True
             )
 
-            # Stats display
+            # Quick stats
             col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
             with col_stat1:
                 st.metric("Minimum", f"{attr_series.min():.2f}")
@@ -1353,7 +1378,6 @@ def flooding_mapping_agent():
             with col_stat4:
                 st.metric("Median", f"{attr_series.median():.2f}")
 
-            # Download
             dl_attr_df = attr_series.rename(selected_attr).reset_index()
             dl_attr_df.columns = ["unit_id", selected_attr]
             dl_attr_df["cb_number"] = dl_attr_df["unit_id"].map(lambda uid: normalize_cb_id(uid))
@@ -1365,7 +1389,6 @@ def flooding_mapping_agent():
                 use_container_width=True,
             )
 
-            # Color legend
             with st.expander("Color Legend", expanded=False):
                 st.write("**Value ranges and colors:**")
                 legend_data = []
@@ -1410,8 +1433,8 @@ def flooding_mapping_agent():
 
     if generate:
         with st.spinner("Generating hourly precipitation and computing daily metrics..."):
-            start_dt = datetime.combine(start_date, time.min)
-            end_dt = datetime.combine(end_date + timedelta(days=1), time.min)
+            start_dt = datetime.combine(start_date, datetime.min.time())
+            end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
             hours_idx, precip_matrix = simulate_hourly_precip_range(start_dt, end_dt, RADAR_DF)
             (daily_max_long,
@@ -1429,7 +1452,7 @@ def flooding_mapping_agent():
             st.session_state["avg_of_daily_total"] = avg_of_daily_total
             st.session_state["range_str"] = f"{start_date.isoformat()}_to_{end_date.isoformat()}"
 
-            # Shared baseline precip
+            # Shared baseline for downstream agents (mean or max over radars)
             if st.session_state.get("baseline_method_choice", "Mean over radars") == "Max over radars":
                 precip_baseline = precip_matrix.max(axis=1)
                 agg_label = "max"
@@ -1501,15 +1524,16 @@ def flooding_mapping_agent():
             get_line_color=[40,40,40], lineWidthMinPixels=2,
             opacity=opacity2
         )
+        label_layer = cb_label_layer_from_boards(boards, text_size=12)
+        layers_sum = [esri_light_gray_basemap(), cb_sum] + ([label_layer] if label_layer else [])
         deck2 = pdk.Deck(
-            layers=[esri_light_gray_basemap(), cb_sum],
+            layers=layers_sum,
             initial_view_state=pdk.ViewState(latitude=lat_c, longitude=lon_c, zoom=zoom_c),
             tooltip={"html": "<b>Board #:</b> {cb}<br/><b>Value:</b> {value}",
                      "style": {"backgroundColor":"white","color":"black"}}
         )
         st.pydeck_chart(deck2, use_container_width=True)
 
-        # Legend for summary map
         with st.expander("Color Legend (summary map)", expanded=False):
             breaks_attr = compute_breaks(board_series2, k=len(BLUES))
             legend_rows = []
@@ -1523,7 +1547,6 @@ def flooding_mapping_agent():
 
         st.caption(f"Summary range: min={board_series2.min():.2f}, max={board_series2.max():.2f} ({label}).")
 
-        # Per-map assistant: Summary map across days
         context_summary = {
             "type": "summary_metric_map",
             "metric_label": metric,
@@ -1564,7 +1587,6 @@ def forecasting_agent():
         st.error("This agent needs the Flood Mapping agent to run first (to load boards and produce a baseline precipitation forecast). Go to 🌊 Flooding, generate a date-range forecast, then return.")
         return
 
-    # See agent handoff — FLOW CHART ONLY (as requested)
     with st.expander("See agent handoff", expanded=True):
         st.graphviz_chart('''
             digraph G {
@@ -1572,16 +1594,17 @@ def forecasting_agent():
                 node [shape=box, style=rounded];
                 "User" -> "Flood Mapping Agent";
                 "Flood Mapping Agent" -> "Forecasting Agent" [label="precip time-series (baseline)"];
+                "Community Board Agent (beta)" -> "Forecasting Agent" [style=dashed, label="context (CB info)"];
                 "Forecasting Agent" -> "User" [label="Explain + QA"];
             }
         ''')
 
-    # Model descriptions + info toggles
+    # --- Model descriptions + info toggles ---
     with st.expander("How the models work (tap to expand)", expanded=False):
         st.markdown("""
 **Rule-based (multiplier × precip)**  
 - Method: For each board and hour, `flood_index = precip_mm_hr × static_multiplier`.  
-- Static multiplier: Derived from scaled **Buildings, Footprint, Impervious, Slope, Elevation, Commuting** via your chosen weight set.
+- Static multiplier: Derived from scaled **Buildings, Footprint, Impervious, Slope, Elevation, Commuting** via your chosen weight set (Model 1).
 
 **Linear residual (p + α·p_prev)**  
 - Method: `flood_index_t = m·p_t + α·(m·p_{t-1})`, where `m` is the static multiplier, `p_t` is baseline precip at time *t*, and `α` captures short-term persistence.
@@ -1596,7 +1619,7 @@ def forecasting_agent():
         with st.expander("What are the **static values**?", expanded=False):
             st.markdown("""
 The static values are board-level, time-invariant features (Buildings, Footprint, Impervious, Slope, Elevation, Commuting).
-They are robustly scaled to ~[0,1] and combined with a weight set to form a **static multiplier** that up/down-weights the precipitation signal per board.
+They are robustly scaled to ~[0,1] and combined with **Model 1** weights to form a **static multiplier** that up/down-weights the precipitation signal per board.
             """)
     with col_info2:
         with st.expander("What is the **precipitation baseline**?", expanded=False):
@@ -1609,11 +1632,9 @@ This exact series is used here; we **do not** regenerate precipitation.
     st.subheader("1) Static-variable weighting and model")
     col1, col2 = st.columns(2)
     with col1:
-        # Force Model 1 key if present
-        keys = list(WEIGHT_SETS.keys())
-        default_idx = keys.index("Random Forest (Model 1)") if "Random Forest (Model 1)" in keys else 0
-        weight_key = st.selectbox("Static importance set", keys, index=default_idx,
-                                  help="Per setup, Model 1 is the intended default.")
+        weight_options = ["Random Forest (Model 1)"]
+        default_key = weight_options[0] if weight_options[0] in WEIGHT_SETS else list(WEIGHT_SETS.keys())[0]
+        weight_key = st.selectbox("Static importance set", [default_key], index=0)
     with col2:
         model = st.selectbox(
             "Forecasting model",
@@ -1625,16 +1646,15 @@ This exact series is used here; we **do not** regenerate precipitation.
 
     multiplier_by_board, static_scaled = build_board_multiplier(boards, weight_set_key=weight_key)
     st.session_state[SESSION_KEYS["static_scaled"]] = static_scaled
-    st.session_state[SESSION_KEYS["weights_used"]] = "Random Forest (Model 1)"
+    st.session_state[SESSION_KEYS["weights_used"]] = weight_key
 
     with st.expander("Transparency: show static variables (scaled to ~[0,1])", expanded=False):
         st.dataframe(static_scaled.reset_index().rename(columns={"index": "unit_id"}), use_container_width=True, hide_index=True)
 
     with st.expander("Transparency: show precipitation baseline used here", expanded=False):
-        # Keep minimal note; data preview removed per earlier change request, but this still clarifies provenance.
-        st.caption("Using precip baseline computed in the Flood Mapping agent (Mean/Max over radar points per hour).")
+        st.dataframe(precip_df, use_container_width=True, hide_index=True)
 
-    # 2) Run forecast
+    # 2) Run the chosen model
     st.subheader("2) Run forecast")
     if model.startswith("Rule-based"):
         fcst_long = forecast_rule_based(precip_df, multiplier_by_board)
@@ -1656,7 +1676,7 @@ This exact series is used here; we **do not** regenerate precipitation.
 
     st.caption(f"**Method:** {method_desc}")
 
-    # 3) Visualize a time step & QA
+    # 3) Pick a time to visualize + QA
     st.subheader("3) Visualize a time step & ask questions")
     times = fcst_long["timestamp"].astype(str).unique().tolist()
     t_sel_str = st.selectbox("Timestamp", times, index=0)
@@ -1700,15 +1720,16 @@ This exact series is used here; we **do not** regenerate precipitation.
         get_fill_color="properties.fill_color",
         get_line_color=[40,40,40], lineWidthMinPixels=2, opacity=0.85
     )
+    label_layer = cb_label_layer_from_boards(boards, text_size=12)
+    layers_fc = [esri_light_gray_basemap(), layer] + ([label_layer] if label_layer else [])
     deck = pdk.Deck(
-        layers=[esri_light_gray_basemap(), layer],
+        layers=layers_fc,
         initial_view_state=pdk.ViewState(latitude=lat_c, longitude=lon_c, zoom=zoom_c),
         tooltip={"html":"<b>Board #:</b> {cb}<br/><b>Flood index:</b> {flood_index:.2f}",
                  "style":{"backgroundColor":"white","color":"black"}}
     )
     st.pydeck_chart(deck, use_container_width=True)
 
-    # Legend for snapshot
     with st.expander("Color Legend (snapshot)", expanded=False):
         legend_rows = []
         rngs = [float(s.min())] + br + [float(s.max())]
@@ -1719,7 +1740,6 @@ This exact series is used here; we **do not** regenerate precipitation.
             })
         st.dataframe(pd.DataFrame(legend_rows), hide_index=True, use_container_width=True)
 
-    # Download the full forecast
     st.download_button(
         "Download full forecast (long table, all times × boards)",
         data=fcst_long.to_csv(index=False).encode("utf-8"),
@@ -1729,15 +1749,14 @@ This exact series is used here; we **do not** regenerate precipitation.
 
     st.caption(
         f"Static multiplier range across boards: "
-        f"{multiplier_by_board.min():.2f} – {multiplier_by_board.max():.2f} (using **Random Forest (Model 1)**)."
+        f"{multiplier_by_board.min():.2f} – {multiplier_by_board.max():.2f} (using **{weight_key}**)."
     )
 
-    # QA for snapshot
     context_forecast = {
         "type": "forecast_snapshot",
         "timestamp": t_sel_str,
         "method": method_desc,
-        "static_weights": "Random Forest (Model 1)",
+        "static_weights": weight_key,
         "by_board": [{"cb": get_board_display_id(b), "flood_index": float(s.get(b['unit_id'], 0.0))} for b in boards],
         "stats": {
             "min": float(s.min()),
@@ -1774,7 +1793,6 @@ This exact series is used here; we **do not** regenerate precipitation.
 
     mean_by_board = fc_window.groupby("unit_id")["flood_index"].mean()
 
-    # Map for range-mean
     br2 = _compute_breaks(mean_by_board, k=7)
     feats2 = []
     for b in boards:
@@ -1798,15 +1816,16 @@ This exact series is used here; we **do not** regenerate precipitation.
         get_fill_color="properties.fill_color",
         get_line_color=[40,40,40], lineWidthMinPixels=2, opacity=0.85
     )
+    label_layer = cb_label_layer_from_boards(boards, text_size=12)
+    layers_fc2 = [esri_light_gray_basemap(), layer2] + ([label_layer] if label_layer else [])
     deck2 = pdk.Deck(
-        layers=[esri_light_gray_basemap(), layer2],
+        layers=layers_fc2,
         initial_view_state=pdk.ViewState(latitude=lat_c, longitude=lon_c, zoom=zoom_c),
         tooltip={"html":"<b>Board #:</b> {cb}<br/><b>Mean Flood index:</b> {flood_index_mean:.2f}",
                  "style":{"backgroundColor":"white","color":"black"}}
     )
     st.pydeck_chart(deck2, use_container_width=True)
 
-    # Legend for range-mean
     with st.expander("Color Legend (range mean)", expanded=False):
         rngs2 = [float(mean_by_board.min())] + br2 + [float(mean_by_board.max())]
         legend_rows2 = []
@@ -1817,7 +1836,6 @@ This exact series is used here; we **do not** regenerate precipitation.
             })
         st.dataframe(pd.DataFrame(legend_rows2), hide_index=True, use_container_width=True)
 
-    # Download mean-by-board CSV
     out_mean = mean_by_board.rename("mean_flood_index").reset_index()
     out_mean["cb_number"] = out_mean["unit_id"].map(lambda uid: normalize_cb_id(uid))
     st.download_button(
@@ -1828,7 +1846,6 @@ This exact series is used here; we **do not** regenerate precipitation.
         use_container_width=True,
     )
 
-    # QA for aggregated map
     context_range = {
         "type": "forecast_range_mean",
         "start": start_ts,
