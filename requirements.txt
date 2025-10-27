@@ -1,4 +1,7 @@
 #arcgis>=2.2,<2.5
+requests
+beautifulsoup4
+scipy
 shapely>=2.0
 pyshp>=2.3
 pyproj>=3.6
