@@ -795,41 +795,6 @@ def cb_label_layer_from_boards(boards, text_size=12):
 
 
 # -----------------------------
-# NYC CB prefix rules & helpers
-# -----------------------------
-BORO_PREFIX = {
-    "1": "Manhattan",
-    "2": "Bronx",
-    "3": "Brooklyn",
-    "4": "Queens",
-    "5": "Staten Island",
-}
-
-def interpret_cb_code(code_str: str):
-    """
-    Interpret a 3-digit community board code like '308' -> ('Brooklyn', 8).
-    Returns (borough_name, board_number) or (None, None) if not parseable.
-    """
-    if not code_str:
-        return None, None
-    s = "".join([c for c in str(code_str) if c.isdigit()])
-    if len(s) < 3:
-        return None, None
-    prefix = s[0]
-    borough = BORO_PREFIX.get(prefix)
-    try:
-        num = int(s[1:3])
-    except Exception:
-        num = None
-    if borough and num and 1 <= num <= 18:
-        return borough, num
-    # lenient fallback: allow numbers outside 1..18 but still return borough
-    if borough and num:
-        return borough, num
-    return None, None
-
-
-# -----------------------------
 # Claude (Bedrock) helper
 # -----------------------------
 def bedrock_enabled() -> bool:
@@ -877,18 +842,11 @@ def render_map_assistant(block_key: str, context: dict, default_hint: str, descr
                 "You are an assistant for a flood risk hackathon. Explain findings clearly for business users. "
                 "Be concise and point out hotspots, drivers, and practical green-infrastructure ideas."
             )
-            # Inject NYC CB numbering rule so Claude honors codes like 308 -> Brooklyn CB 8
-            numbering_rules = (
-                "\n\nNYC Community Board numbering:\n"
-                "- Prefix 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
-                "- A three-digit code XYZ means borough X and board YZ (e.g., 308 → Brooklyn CB 8, 402 → Queens CB 2)."
-            )
             extra = "\n\nIMPORTANT: Refer to locations by their community board NUMBER only (e.g., 305)."
             prompt = (
                 "Use the following JSON context to describe the current map and give planning suggestions. "
                 "Focus on what stands out, why, and what to do next.\n\n"
                 + json.dumps(context, indent=2)
-                + numbering_rules
             )
             if describe_by_cb:
                 prompt += extra
@@ -917,15 +875,9 @@ def render_map_assistant(block_key: str, context: dict, default_hint: str, descr
                 transcript.append(f"{turn['role'].capitalize()}: {turn['text']}")
             transcript_text = "\n".join(transcript)
 
-            numbering_rules = (
-                "\n\nNYC Community Board numbering:\n"
-                "- Prefix 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
-                "- A three-digit code XYZ means borough X and board YZ."
-            )
             prompt = (
                 "Context JSON for the current map:\n"
                 + json.dumps(context, indent=2)
-                + numbering_rules
                 + "\n\nRecent exchange:\n"
                 + transcript_text
                 + "\n\nUser follow-up:\n"
@@ -972,51 +924,26 @@ def sidebar_agents():
         st.button("🌊 Flooding", use_container_width=True, on_click=lambda: st.session_state.update(page="flooding"))
         st.button("📈 Forecasting", use_container_width=True, on_click=lambda: st.session_state.update(page="forecasting"))
         st.divider()
-        # Community Board Agent (beta): NYC CAU link + Claude context with prefix rules
+        # Community Board Agent (beta): link to NYC CAU page + optional Claude prompt
         with st.expander("🧭 Community Board Agent (beta)", expanded=False):
             st.write("Browse official NYC Community Boards info:")
-            st.link_button(
-                "Open NYC CAU Community Boards",
-                "https://www.nyc.gov/site/cau/community-boards/community-boards.page",
-                use_container_width=True
-            )
+            st.link_button("Open NYC CAU Community Boards", "https://www.nyc.gov/site/cau/community-boards/community-boards.page", use_container_width=True)
             st.caption("Tip: find the borough & board you care about, then come back and ask questions here.")
-
-            # Optional helper: interpret a numeric code like 308
-            code_in = st.text_input("Enter a 3-digit CB code (e.g., 308 → Brooklyn CB 8)", "")
-            if code_in.strip():
-                boro, num = interpret_cb_code(code_in.strip())
-                if boro and num:
-                    st.success(f"Interpreted: **{boro} Community Board {num}**")
-                else:
-                    st.warning("Could not interpret that code. Expected a 3-digit like 308, 402, 115, etc.")
-
             q = st.text_area("Ask about a Community Board (e.g., 'What do you know about CB 308?')", "")
             if st.button("Ask Claude about a CB"):
                 if not q.strip():
                     st.warning("Please type a question first.")
                 else:
                     try:
-                        numbering_rules = (
-                            "When the user mentions a 3-digit code XYZ, interpret it as borough prefix X and board YZ.\n"
-                            "Prefixes: 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
-                            "Examples: 308 → Brooklyn CB 8; 402 → Queens CB 2; 115 → Manhattan CB 15."
-                        )
-                        base_prompt = (
-                            "You are helping with NYC Community Board context for planning. "
-                            "Answer briefly and clearly. If unsure, say so and suggest the official NYC CB page "
-                            "(https://www.nyc.gov/site/cau/community-boards/community-boards.page).\n\n"
-                            + numbering_rules
-                            + "\n\nUser question:\n"
-                            + q
-                        )
                         if bedrock_enabled():
-                            answer = call_claude(base_prompt, system="NYC CB assistant", temperature=0.2)
-                        else:
-                            answer = (
-                                "If Claude is connected, I’ll interpret codes like 308 as Brooklyn CB 8 and summarize what’s generally known. "
-                                "For official details, use the NYC CB page linked above."
+                            answer = call_claude(
+                                f"You are helping with NYC Community Board context for planning. "
+                                f"Answer briefly and clearly. If unsure, say so and suggest the official NYC CB link above. "
+                                f"Question:\n{q}",
+                                system="NYC CB assistant", temperature=0.2
                             )
+                        else:
+                            answer = "If Claude is connected, I’ll summarize what’s generally known about that board and suggest checking the NYC CB page."
                         st.info(answer)
                     except Exception as e:
                         st.error(f"Claude/Bedrock error: {e}")
@@ -1576,6 +1503,7 @@ def forecasting_agent():
     lon_c = st.session_state.get(SESSION_KEYS["lon"])
     zoom_c = st.session_state.get(SESSION_KEYS["zoom"])
     precip_df = st.session_state.get(SESSION_KEYS["precip_df"])
+    # precip_meta not displayed per request
 
     if any(v is None for v in [boards, lat_c, lon_c, zoom_c]) or precip_df is None:
         st.error("This agent needs the Flood Mapping agent to run first (to load boards and produce a baseline precipitation forecast). Go to 🌊 Flooding, generate a date-range forecast, then return.")
@@ -1626,7 +1554,9 @@ This exact series is used here; we **do not** regenerate precipitation.
     st.subheader("1) Static-variable weighting and model")
     col1, col2 = st.columns(2)
     with col1:
+        # Restrict to Model 1 only
         weight_options = ["Random Forest (Model 1)"]
+        # In case your WEIGHT_SETS uses a slightly different key, map gracefully:
         default_key = weight_options[0] if weight_options[0] in WEIGHT_SETS else list(WEIGHT_SETS.keys())[0]
         weight_key = st.selectbox("Static importance set", [default_key], index=0)
     with col2:
