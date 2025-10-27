@@ -35,13 +35,6 @@ except Exception:
 
 
 # =========================
-# Feature flags
-# =========================
-# Deactivate the sidebar "Community Board Agent (beta)" without deleting code:
-ENABLE_CB_AGENT_SIDEBAR = False
-
-
-# =========================
 # Shared helpers for static multiplier
 # =========================
 def build_board_multiplier(boards, weight_set_key="Random Forest (Model 1)"):
@@ -592,8 +585,8 @@ def _load_boards_from_shapefile_zipfilelike(zip_filelike):
 
                 if not looks_like_lonlat(x0, y0):
                     transformer = Transformer.from_crs(
-                        2263,
-                        4326,
+                        CRS.from_epsg(2263),
+                        CRS.from_epsg(4326),
                         always_xy=True
                     )
             except Exception:
@@ -830,6 +823,7 @@ def interpret_cb_code(code_str: str):
         num = None
     if borough and num and 1 <= num <= 18:
         return borough, num
+    # lenient fallback: allow numbers outside 1..18 but still return borough
     if borough and num:
         return borough, num
     return None, None
@@ -883,6 +877,7 @@ def render_map_assistant(block_key: str, context: dict, default_hint: str, descr
                 "You are an assistant for a flood risk hackathon. Explain findings clearly for business users. "
                 "Be concise and point out hotspots, drivers, and practical green-infrastructure ideas."
             )
+            # Inject NYC CB numbering rule so Claude honors codes like 308 -> Brooklyn CB 8
             numbering_rules = (
                 "\n\nNYC Community Board numbering:\n"
                 "- Prefix 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
@@ -977,55 +972,54 @@ def sidebar_agents():
         st.button("🌊 Flooding", use_container_width=True, on_click=lambda: st.session_state.update(page="flooding"))
         st.button("📈 Forecasting", use_container_width=True, on_click=lambda: st.session_state.update(page="forecasting"))
         st.divider()
+        # Community Board Agent (beta): NYC CAU link + Claude context with prefix rules
+        with st.expander("🧭 Community Board Agent (beta)", expanded=False):
+            st.write("Browse official NYC Community Boards info:")
+            st.link_button(
+                "Open NYC CAU Community Boards",
+                "https://www.nyc.gov/site/cau/community-boards/community-boards.page",
+                use_container_width=True
+            )
+            st.caption("Tip: find the borough & board you care about, then come back and ask questions here.")
 
-        # 🛑 Community Board Agent (beta) is deactivated by flag
-        if ENABLE_CB_AGENT_SIDEBAR:
-            with st.expander("🧭 Community Board Agent (beta)", expanded=False):
-                st.write("Browse official NYC Community Boards info:")
-                st.link_button(
-                    "Open NYC CAU Community Boards",
-                    "https://www.nyc.gov/site/cau/community-boards/community-boards.page",
-                    use_container_width=True
-                )
-                st.caption("Tip: find the borough & board you care about, then come back and ask questions here.")
+            # Optional helper: interpret a numeric code like 308
+            code_in = st.text_input("Enter a 3-digit CB code (e.g., 308 → Brooklyn CB 8)", "")
+            if code_in.strip():
+                boro, num = interpret_cb_code(code_in.strip())
+                if boro and num:
+                    st.success(f"Interpreted: **{boro} Community Board {num}**")
+                else:
+                    st.warning("Could not interpret that code. Expected a 3-digit like 308, 402, 115, etc.")
 
-                code_in = st.text_input("Enter a 3-digit CB code (e.g., 308 → Brooklyn CB 8)", "")
-                if code_in.strip():
-                    boro, num = interpret_cb_code(code_in.strip())
-                    if boro and num:
-                        st.success(f"Interpreted: **{boro} Community Board {num}**")
-                    else:
-                        st.warning("Could not interpret that code. Expected a 3-digit like 308, 402, 115, etc.")
-
-                q = st.text_area("Ask about a Community Board (e.g., 'What do you know about CB 308?')", "")
-                if st.button("Ask Claude about a CB"):
-                    if not q.strip():
-                        st.warning("Please type a question first.")
-                    else:
-                        try:
-                            numbering_rules = (
-                                "When the user mentions a 3-digit code XYZ, interpret it as borough prefix X and board YZ.\n"
-                                "Prefixes: 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
-                                "Examples: 308 → Brooklyn CB 8; 402 → Queens CB 2; 115 → Manhattan CB 15."
+            q = st.text_area("Ask about a Community Board (e.g., 'What do you know about CB 308?')", "")
+            if st.button("Ask Claude about a CB"):
+                if not q.strip():
+                    st.warning("Please type a question first.")
+                else:
+                    try:
+                        numbering_rules = (
+                            "When the user mentions a 3-digit code XYZ, interpret it as borough prefix X and board YZ.\n"
+                            "Prefixes: 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.\n"
+                            "Examples: 308 → Brooklyn CB 8; 402 → Queens CB 2; 115 → Manhattan CB 15."
+                        )
+                        base_prompt = (
+                            "You are helping with NYC Community Board context for planning. "
+                            "Answer briefly and clearly. If unsure, say so and suggest the official NYC CB page "
+                            "(https://www.nyc.gov/site/cau/community-boards/community-boards.page).\n\n"
+                            + numbering_rules
+                            + "\n\nUser question:\n"
+                            + q
+                        )
+                        if bedrock_enabled():
+                            answer = call_claude(base_prompt, system="NYC CB assistant", temperature=0.2)
+                        else:
+                            answer = (
+                                "If Claude is connected, I’ll interpret codes like 308 as Brooklyn CB 8 and summarize what’s generally known. "
+                                "For official details, use the NYC CB page linked above."
                             )
-                            base_prompt = (
-                                "You are helping with NYC Community Board context for planning. "
-                                "Answer briefly and clearly. If unsure, say so and suggest the official NYC CB page "
-                                "(https://www.nyc.gov/site/cau/community-boards/community-boards.page).\n\n"
-                                + numbering_rules
-                                + "\n\nUser question:\n"
-                                + q
-                            )
-                            if bedrock_enabled():
-                                answer = call_claude(base_prompt, system="NYC CB assistant", temperature=0.2)
-                            else:
-                                answer = (
-                                    "If Claude is connected, I’ll interpret codes like 308 as Brooklyn CB 8 and summarize what’s generally known. "
-                                    "For official details, use the NYC CB page linked above."
-                                )
-                            st.info(answer)
-                        except Exception as e:
-                            st.error(f"Claude/Bedrock error: {e}")
+                        st.info(answer)
+                    except Exception as e:
+                        st.error(f"Claude/Bedrock error: {e}")
 
         if bedrock_enabled():
             st.success("Claude (Bedrock) connected.")
