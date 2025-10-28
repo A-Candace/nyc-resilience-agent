@@ -1,6 +1,7 @@
 #arcgis>=2.2,<2.5
-# requests
-# beautifulsoup4
+requests
+beautifulsoup4
+botocore>=1.34
 scipy
 shapely>=2.0
 pyshp>=2.3
@@ -12,3 +13,6 @@ numpy==1.26.4
 pydeck==0.9.1
 python-dotenv==1.0.1
 boto3==1.34.162
+
+
+
