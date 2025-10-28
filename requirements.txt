@@ -1,18 +1,19 @@
-#arcgis>=2.2,<2.5
-requests
-beautifulsoup4
+beautifulsoup4==4.12.3
+requests==2.32.3
+boto3==1.34.162
 botocore>=1.34
 scipy
 shapely>=2.0
 pyshp>=2.3
 pyproj>=3.6
-requests>=2.31
 streamlit==1.38.0
 pandas==2.2.2
 numpy==1.26.4
 pydeck==0.9.1
 python-dotenv==1.0.1
-boto3==1.34.162
+# arcgis optional; uncomment only if you truly need it on cloud
+# arcgis>=2.2,<2.5
+
 
 
 

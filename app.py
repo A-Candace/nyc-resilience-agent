@@ -72,7 +72,21 @@ def _zipfile_from_any(obj):
         return ZipFile(BytesIO(obj))
     raise TypeError("Unsupported ZIP input type for shapefile loader.")
 
+def _seed_env_from_secrets():
+    try:
+        import streamlit as st  # already imported above in your file
+        keys = [
+            "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION",
+            "BEDROCK_MODEL_ID", "ARCGIS_PORTAL", "ARCGIS_USERNAME", "ARCGIS_PASSWORD",
+            "MAPBOX_API_KEY", "LOCAL_CB_ZIP"
+        ]
+        for k in keys:
+            if k in st.secrets and st.secrets[k]:
+                os.environ[k] = str(st.secrets[k])
+    except Exception:
+        pass
 
+_seed_env_from_secrets()
 # -----------------------------
 # Environment
 # -----------------------------
@@ -840,15 +854,26 @@ def interpret_cb_code(code_str: str):
 # -----------------------------
 def bedrock_enabled() -> bool:
     return all([
-        os.getenv("AWS_ACCESS_KEY_ID"),
-        os.getenv("AWS_SECRET_ACCESS_KEY"),
-        os.getenv("AWS_REGION")
+        (os.getenv("AWS_ACCESS_KEY_ID") or ""),
+        (os.getenv("AWS_SECRET_ACCESS_KEY") or ""),
+        (os.getenv("AWS_REGION") or "")
     ])
 
 def call_claude(prompt: str, system: str = None, temperature: float = 0.2, max_tokens: int = 600) -> str:
+    import json
     import boto3
-    client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    from botocore.config import Config
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    cfg = Config(
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        read_timeout=20,
+        connect_timeout=5,
+        retries={"max_attempts": 2, "mode": "standard"},
+    )
+    client = boto3.client("bedrock-runtime", config=cfg)
     model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+
     body = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": max_tokens,
@@ -857,14 +882,25 @@ def call_claude(prompt: str, system: str = None, temperature: float = 0.2, max_t
     }
     if system:
         body["system"] = system
-    resp = client.invoke_model(modelId=model_id, contentType="application/json", accept="application/json", body=json.dumps(body))
-    payload = json.loads(resp["body"].read())
-    parts = []
-    for blk in payload.get("content", []):
-        if blk.get("type") == "text":
-            parts.append(blk.get("text", ""))
-    return "".join(parts).strip() or "(no text returned)"
 
+    try:
+        resp = client.invoke_model(
+            modelId=model_id,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
+        )
+        payload = json.loads(resp["body"].read())
+        parts = []
+        for blk in payload.get("content", []):
+            if blk.get("type") == "text":
+                parts.append(blk.get("text", ""))
+        text = "".join(parts).strip()
+        return text or "(no text returned)"
+    except (BotoCoreError, ClientError) as e:
+        # surface a friendly, visible error in the UI
+        st.error(f"Claude/Bedrock error ({type(e).__name__}): {e}")
+        return "(Bedrock error)"
 
 # -----------------------------
 # Per-map / per-result assistant UI helper
@@ -1030,7 +1066,8 @@ def sidebar_agents():
         if bedrock_enabled():
             st.success("Claude (Bedrock) connected.")
         else:
-            st.info("Claude: set AWS creds in .env to enable chat.")
+            missing = [k for k in ("AWS_ACCESS_KEY_ID","AWS_SECRET_ACCESS_KEY","AWS_REGION") if not os.getenv(k)]
+            st.info("Claude: missing " + ", ".join(missing) + " — set in Streamlit Secrets.")
 
 
 def landing_page():
