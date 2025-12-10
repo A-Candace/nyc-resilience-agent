@@ -1,10 +1,61 @@
-version: "3.9"
 services:
-  nyc-ai-agent:
-    build: .
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.17.0
+    container_name: mlflow
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlruns/mlflow.db
+      --default-artifact-root /mlruns/artifacts
+      --serve-artifacts
     ports:
-      - "8505:8505"
+      - "5001:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    environment:
+      # Allow proxied headers and cross-origin UI calls
+      GUNICORN_CMD_ARGS: "--forwarded-allow-ips='*' --proxy-allow-from='*' --access-logfile -"
+      MLFLOW_TRACKING_SERVER_CORS_ORIGINS: "*"
+      # (Optional) canonical values (helpful in some proxy setups)
+      MLFLOW_TRACKING_SERVER_APP_HOST: "mlflow"
+      MLFLOW_TRACKING_SERVER_APP_PORT: "5000"
+    healthcheck:
+      # Use Python (present in the image) to probe the REST endpoint
+      test: >
+        bash -lc "python - <<'PY'
+        import sys,urllib.request
+        try:
+            urllib.request.urlopen('http://127.0.0.1:5000/api/2.0/mlflow/experiments/list', timeout=3)
+            sys.exit(0)
+        except Exception as e:
+            print(e)
+            sys.exit(1)
+        PY"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hackathon-agent
+    depends_on:
+      # Don't block on "healthy" — just wait for the container to start
+      mlflow:
+        condition: service_started
+    ports:
+      - "8501:8501"
     env_file:
       - .env
+    environment:
+      # Talk to MLflow via the internal Docker hostname (NOT localhost)
+      MLFLOW_TRACKING_URI: "http://mlflow:5000"
+      MLFLOW_EXPERIMENT: "hackathon-agent"
     volumes:
       - ./:/app
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    restart: unless-stopped

@@ -19,8 +19,8 @@ RUN pip install --upgrade pip wheel && pip install --no-cache-dir -r requirement
 COPY app.py .
 COPY .env .env
 
-ENV STREAMLIT_SERVER_PORT=8505
+ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_HEADLESS=true
-EXPOSE 8505
+EXPOSE 8501
 
 CMD ["streamlit", "run", "app.py"]
