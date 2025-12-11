@@ -1,6 +1,11 @@
 # app.py
+import streamlit as st
+st.set_page_config(page_title="NYC Resilience AI Agent", page_icon="🌆", layout="wide")
+
+# app.py
 from io import BytesIO
 import os
+
 import math
 import json
 import re
@@ -59,7 +64,7 @@ except Exception as e:
     st.toast(f"MLflow experiment set error: {e}", icon="⚠️")
 
 # ---- App-wide UI config ----
-st.set_page_config(page_title="NYC Resilience AI Agent", page_icon="🌆", layout="wide")
+#st.set_page_config(page_title="NYC Resilience AI Agent", page_icon="🌆", layout="wide")
 
 # =====================================================================
 # Utilities (Claude calls, MLflow GenAI logging, geometry, coloring)
@@ -1218,12 +1223,12 @@ METH_FORECAST = {
 }
 
 METH_URBAN = """**Static Urban Features (context)**
-- **Elevation**: Mean elevation per census tract from USGS DEM data, aggregated using Zonal Statistics
-- **Slope**: Mean slope per census tract derived from elevation data, aggregated using Zonal Statistics
-- **Building Footprint**: Total building footprint area (square kilometers) per census tract, summed from NYC building footprint dataset
+- **Elevation**: Mean elevation [from NYC Open Data] aggregated per census tract via ArcGIS Pro.
+- **Slope**: Mean slope [from NYC Open Data] aggregated per census tract via ArcGIS Pro.
+- **Building Footprint**: Total building footprint area (square kilometers) [from NYC Open Data] aggregated per census tract via ArcGIS Pro.
 - **Building Footprint Density**: Ratio of building footprint area to total tract area (both in sq km). Higher values indicate more built-up areas.
-- **Data Processing**: All spatial data aggregated to census tract level using ArcGIS Pro Zonal Statistics and Summarize Within tools
-- **Interpretation**: Higher footprint density and lower elevation typically correlate with increased flood vulnerability
+- **Data Processing**: All spatial data aggregated to census tract level using ArcGIS Pro statistical tooling.
+- **Interpretation**: Higher footprint density, smaller slope and lower elevation typically correlate with increased flood vulnerability.
 """
 
 METH_UHI = """**Urban Heat Island / Heat-Wave Risk (methodology)**
