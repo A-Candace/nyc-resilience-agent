@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Extra system libs that help arcgis import cleanly
+# System deps (keep what you had)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -13,14 +13,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Install Python deps
 COPY requirements.txt .
 RUN pip install --upgrade pip wheel && pip install --no-cache-dir -r requirements.txt
 
+# Copy app code
 COPY app.py .
-COPY .env .env
 
-ENV STREAMLIT_SERVER_PORT=8501
+# IMPORTANT:
+# Do NOT bake secrets into the container image.
+# App Runner should provide these as environment variables.
+# (Removed) COPY .env .env
+
+# Streamlit settings
 ENV STREAMLIT_SERVER_HEADLESS=true
-EXPOSE 8501
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
-CMD ["streamlit", "run", "app.py"]
+# App Runner convention
+EXPOSE 8080
+
+# Bind to 0.0.0.0 and use $PORT when provided by the platform
+CMD ["bash", "-lc", "streamlit run app.py --server.address 0.0.0.0 --server.port ${PORT:-8080} --server.headless true"]
