@@ -1,8 +1,4 @@
 # app.py
-import streamlit as st
-st.set_page_config(page_title="NYC Resilience AI Agent", page_icon="🌆", layout="wide")
-
-# app.py
 from io import BytesIO
 import os
 
@@ -14,9 +10,17 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import streamlit as st
 import pydeck as pdk
 from dotenv import load_dotenv
+
+import streamlit as st
+st.set_page_config(page_title="NYC Resilience AI Agent", page_icon="🌆", layout="wide")
+st.set_option("client.showErrorDetails", False)
+
+if os.getenv("APP_ENV", "local") == "local":
+    load_dotenv()
+
+ENABLE_MLFLOW = os.getenv("ENABLE_MLFLOW", "false").lower() == "true"
 
 # Optional / conditional imports
 try:
@@ -39,8 +43,6 @@ def _mlflow_genai_available():
 
 GENAI_OK = _mlflow_genai_available()
 
-# ---- Environment ----
-load_dotenv()
 
 # Claude / Bedrock config
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -51,17 +53,19 @@ HAS_BEDROCK = all([
     os.getenv("AWS_REGION")
 ])
 
-# MLflow config
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+# MLflow config (optional for hackathon)
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
 MLFLOW_EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT", "nyc-resilience-agent")
-os.environ.setdefault("MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "false")
 
-if MLFLOW_TRACKING_URI:
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-try:
-    mlflow.set_experiment(MLFLOW_EXPERIMENT)
-except Exception as e:
-    st.toast(f"MLflow experiment set error: {e}", icon="⚠️")
+if ENABLE_MLFLOW and MLFLOW_TRACKING_URI:
+    try:
+        os.environ.setdefault("MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "false")
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT)
+    except Exception as e:
+        st.warning(f"MLflow disabled: {e}")
+else:
+    ENABLE_MLFLOW = False
 
 # ---- App-wide UI config ----
 #st.set_page_config(page_title="NYC Resilience AI Agent", page_icon="🌆", layout="wide")
@@ -121,6 +125,9 @@ def genai_log(prompt_text: str, response_text: str, meta: dict):
     """
     Log a GenAI prompt→response to MLflow.
     """
+    if not ENABLE_MLFLOW:
+        return
+    
     if GENAI_OK:
         import mlflow.genai as mgen
         with mgen.start_trace() as trace:
