@@ -3,9 +3,13 @@ runtime: python311
 
 build:
   commands:
+    pre-build:
+      - echo "DEBUG: pre-build start"
+      - python --version
+      - python -m pip --version
     build:
-      - echo "DEBUG: Starting Build Phase"
-      - python -m pip install --upgrade pip
+      - echo "DEBUG: build start"
+      - python -m pip install --upgrade pip wheel
       - python -m pip install -r requirements.txt
 
 run:
