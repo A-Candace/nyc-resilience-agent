@@ -3,12 +3,11 @@ runtime: python311
 
 build:
   commands:
-    pre-build:
-      - python3 --version
-      - pip3 --version
-    build:
-      - pip3 install --upgrade pip wheel
-      - pip3 install --no-cache-dir -r requirements.txt
+    - set -e
+    - python3 --version
+    - pip3 --version
+    - pip3 install --upgrade pip wheel
+    - pip3 install --no-cache-dir -r requirements.txt
 
 run:
   command: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
