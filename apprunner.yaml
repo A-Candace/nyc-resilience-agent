@@ -1,17 +1,16 @@
 version: 1.0
-runtime: python3
+runtime: python311
 
 build:
   commands:
     pre-build:
-      - python3 --version
-      - python3 -m pip --version
+      - python --version
+      - python -m pip --version
     build:
-      - python3 -m pip install --upgrade pip wheel setuptools
-      - python3 -m pip install --no-cache-dir -r requirements.txt
+      - python -m pip install --upgrade pip wheel setuptools
+      - python -m pip install --no-cache-dir -r requirements.txt
 
 run:
-  runtime-version: 3.11
   command: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
   network:
     port: 8080
