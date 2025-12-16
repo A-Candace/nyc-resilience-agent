@@ -3,7 +3,7 @@ runtime: python311
 
 build:
   commands:
-    pre-build:
+    pre_build:
       - python --version
       - python -m pip --version
     build:
