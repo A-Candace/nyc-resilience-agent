@@ -2,12 +2,12 @@ version: 1.0
 runtime: python3
 
 build:
-  commands:
-    pre-build:
-      - apt-get update && apt-get install -y --no-install-recommends build-essential curl libglib2.0-0 libsm6 libxext6 libxrender1 libkrb5-3 && rm -rf /var/lib/apt/lists/*
-    build:
-      - pip install --upgrade pip wheel
-      - pip install --no-cache-dir -r requirements.txt
+  commands: |
+    set -euxo pipefail
+    python --version
+    pip --version
+    pip install --upgrade pip wheel
+    pip install --no-cache-dir -r requirements.txt
 
 run:
   command: streamlit run app.py --server.address 0.0.0.0 --server.port ${PORT:-8080} --server.headless true
