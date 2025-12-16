@@ -5,6 +5,7 @@ build:
   commands:
     # python -m is required in python311 runtime
     build:
+      - echo "Building the application..."
       - python -m pip install --no-cache-dir -r requirements.txt
 
 run:
