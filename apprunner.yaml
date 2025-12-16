@@ -1,14 +1,25 @@
 version: 1.0
-runtime: python311  # Updated runtime
+runtime: python311
 
 build:
   commands:
-    # python -m is required in python311 runtime
+    # Adding pre-build back just to see if it triggers
+    pre-build:
+      - echo "DEBUG 1: Starting PRE-BUILD phase"
+      - python --version
+      - echo "DEBUG 2: Finished PRE-BUILD phase"
     build:
-      - echo "Building the application..."
+      - echo "DEBUG 3: Starting BUILD phase"
+      - echo "DEBUG 4: Current directory is $(pwd)"
+      - echo "DEBUG 5: Listing files..."
+      - ls -R
+      - echo "DEBUG 6: Installing requirements..."
       - python -m pip install --no-cache-dir -r requirements.txt
+      - echo "DEBUG 7: BUILD phase complete"
 
 run:
-  command: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
+  command: |
+    echo "DEBUG 8: Starting RUN phase"
+    streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
   network:
     port: 8080
