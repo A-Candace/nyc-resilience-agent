@@ -1,16 +1,13 @@
 version: 1.0
-runtime: python3
+runtime: python311  # Updated runtime
 
 build:
   commands:
-    pre-build:
-      # Use python -m to avoid path/permission issues
-      - python -m pip install --upgrade pip wheel
+    # python -m is required in python311 runtime
     build:
       - python -m pip install --no-cache-dir -r requirements.txt
 
 run:
-  # Your run command looks correct for Streamlit
   command: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
   network:
     port: 8080
