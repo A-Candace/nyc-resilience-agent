@@ -21,6 +21,7 @@ COPY .env .env
 
 ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_HEADLESS=true
-EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py"]
+EXPOSE 8501
+CMD ["bash", "-lc", "streamlit run app.py --server.address=0.0.0.0 --server.port=8501"]
+
