@@ -17,11 +17,12 @@ COPY requirements.txt .
 RUN pip install --upgrade pip wheel && pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
-COPY .env .env
 
-ENV STREAMLIT_SERVER_PORT=8501
+# Streamlit defaults (EB can override via PORT env var)
 ENV STREAMLIT_SERVER_HEADLESS=true
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 EXPOSE 8501
-CMD ["bash", "-lc", "streamlit run app.py --server.address=0.0.0.0 --server.port=8501"]
+
+CMD ["bash", "-lc", "streamlit run app.py --server.address=0.0.0.0 --server.port=${PORT:-8501} --server.headless=true"]
 
